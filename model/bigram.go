@@ -1,6 +1,10 @@
 package model
 
-import "github.com/dmarro89/quasar/tokenizer"
+import (
+	"fmt"
+
+	"github.com/dmarro89/quasar/tokenizer"
+)
 
 // Bigram stores observed next-token counts for each token.
 // Rows are allocated lazily so unused vocabulary entries consume no map storage.
@@ -14,17 +18,18 @@ func NewBigram(vocabularySize int) *Bigram {
 }
 
 // Train counts every adjacent token pair in a sequence.
-func (m *Bigram) Train(tokens []tokenizer.TokenID) {
+func (m *Bigram) Train(tokens []tokenizer.TokenID) error {
 	for i := 0; i+1 < len(tokens); i++ {
 		from, to := tokens[i], tokens[i+1]
 		if int(from) >= len(m.transitions) || int(to) >= len(m.transitions) {
-			continue
+			return fmt.Errorf("transition %d -> %d exceeds vocabulary size %d", from, to, len(m.transitions))
 		}
 		if m.transitions[from] == nil {
 			m.transitions[from] = make(map[tokenizer.TokenID]uint32)
 		}
 		m.transitions[from][to]++
 	}
+	return nil
 }
 
 // Next returns the highest-scoring next token.

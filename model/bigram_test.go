@@ -8,7 +8,9 @@ import (
 
 func TestNextReturnsMostFrequentTransition(t *testing.T) {
 	m := NewBigram(3)
-	m.Train([]tokenizer.TokenID{0, 1, 0, 1, 0, 2})
+	if err := m.Train([]tokenizer.TokenID{0, 1, 0, 1, 0, 2}); err != nil {
+		t.Fatalf("Train() error = %v", err)
+	}
 
 	got, ok := m.Next(0)
 	if !ok {
@@ -21,7 +23,9 @@ func TestNextReturnsMostFrequentTransition(t *testing.T) {
 
 func TestNextBreaksTiesByLowerTokenID(t *testing.T) {
 	m := NewBigram(3)
-	m.Train([]tokenizer.TokenID{0, 2, 0, 1})
+	if err := m.Train([]tokenizer.TokenID{0, 2, 0, 1}); err != nil {
+		t.Fatalf("Train() error = %v", err)
+	}
 
 	got, ok := m.Next(0)
 	if !ok {
@@ -34,7 +38,9 @@ func TestNextBreaksTiesByLowerTokenID(t *testing.T) {
 
 func TestGenerateStopsWhenNoTransitionExists(t *testing.T) {
 	m := NewBigram(3)
-	m.Train([]tokenizer.TokenID{0, 1, 2})
+	if err := m.Train([]tokenizer.TokenID{0, 1, 2}); err != nil {
+		t.Fatalf("Train() error = %v", err)
+	}
 
 	got := m.Generate(0, 10)
 	want := []tokenizer.TokenID{1, 2}
@@ -45,5 +51,12 @@ func TestGenerateStopsWhenNoTransitionExists(t *testing.T) {
 		if got[i] != want[i] {
 			t.Fatalf("Generate()[%d] = %d, want %d", i, got[i], want[i])
 		}
+	}
+}
+
+func TestTrainRejectsTokenOutsideVocabulary(t *testing.T) {
+	m := NewBigram(2)
+	if err := m.Train([]tokenizer.TokenID{0, 2}); err == nil {
+		t.Fatal("Train() error = nil, want out-of-vocabulary error")
 	}
 }
