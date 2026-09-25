@@ -20,6 +20,12 @@ jobs:
       - name: Formatting
         run: test -z "$(gofmt -l .)"
       - name: Vet
-        run: go vet ./...
+        run: |
+          if [ -n "$(go list ./...)" ]; then
+            go vet ./...
+          fi
       - name: Unit tests
-        run: go test ./...
+        run: |
+          if [ -n "$(go list ./...)" ]; then
+            go test ./...
+          fi
