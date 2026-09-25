@@ -4,11 +4,27 @@ Quasar is an educational inference engine built from first principles in Go.
 
 The project grows one small release at a time. Each version introduces one important inference concept, implements it with minimal code, tests it, documents it, and keeps performance visible from the beginning.
 
-Quasar is inspired by specialized local inference engines such as DwarfStar, but deliberately starts from much simpler models so that every layer of the system can be understood before it is optimized.
+Quasar is inspired by specialized local inference engines such as DwarfStar, but deliberately starts from much simpler models so every layer of the system can be understood before it is optimized.
 
-## Current work: v0.1.0
+## Current release: v0.1.0
 
-The first release will implement the smallest useful autoregressive text-generation loop, using a deterministic word-level bigram model.
+v0.1.0 implements a deterministic word-level bigram generator. It teaches the smallest useful autoregressive inference loop:
+
+`text -> tokens -> vocabulary -> transition scores -> next token -> repeat`
+
+This is not an LLM yet. It is the baseline from which Quasar will evolve.
+
+## Run it
+
+```bash
+go run ./cmd/quasar -corpus examples/corpus.txt -prompt "the" -tokens 4
+```
+
+With the included corpus, the deterministic output is:
+
+```text
+the moon shines at night
+```
 
 ## Development principles
 
@@ -24,4 +40,5 @@ See [AGENTS.md](AGENTS.md) for the complete development rules.
 
 ## Documentation
 
-General engine documentation lives under [`docs/`](docs/). Each release also gets dedicated technical notes under `docs/releases/`.
+- [General documentation](docs/README.md)
+- [v0.1.0 technical notes](docs/releases/v0.1/README.md)
