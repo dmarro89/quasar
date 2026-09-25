@@ -1,0 +1,4 @@
+/quasar
+/bin/
+*.out
+.DS_Store
