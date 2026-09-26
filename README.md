@@ -6,17 +6,21 @@ The project grows one small release at a time. Each version introduces one impor
 
 Quasar is inspired by specialized local inference engines such as DwarfStar, but deliberately starts from much simpler models so every layer of the system can be understood before it is optimized.
 
-## Current release: v0.2.0
+## Current release: v0.3.0
 
-v0.2.0 introduces token embeddings: a token ID can now be mapped to a fixed-width `float32` vector stored in a contiguous embedding table.
+v0.3.0 introduces Quasar's first trainable neural model.
 
-The new path is:
+The model still predicts the next token from only one previous token, but it no longer relies only on transition counts. It now learns numeric weights:
 
-`text -> TokenID -> embedding table -> vector`
+`TokenID -> embedding -> dot products -> logits -> next token`
 
-The embedding values are deterministic but intentionally **untrained**. They do not carry semantic meaning yet. The v0.1 deterministic bigram generator remains available unchanged while Quasar builds the numeric foundations required for a neural model.
+During training Quasar applies:
 
-## Generate text
+`logits -> softmax -> cross-entropy loss -> gradients -> SGD weight updates`
+
+This means the embedding values introduced in v0.2 can now actually change as the model learns from the corpus.
+
+## Generate with the original bigram model
 
 ```bash
 go run ./cmd/quasar -corpus examples/corpus.txt -prompt "the" -tokens 4
@@ -28,13 +32,28 @@ With the included corpus:
 the moon shines at night
 ```
 
-## Inspect an embedding
+## Train and use the neural bigram
+
+```bash
+go run ./cmd/quasar \
+  -corpus examples/corpus.txt \
+  -prompt "the" \
+  -tokens 4 \
+  -neural \
+  -dimensions 8 \
+  -epochs 100 \
+  -learning-rate 0.05
+```
+
+The first and final epoch loss are printed to stderr so training progress is visible. Generated text is written to stdout.
+
+## Inspect an untrained embedding
 
 ```bash
 go run ./cmd/quasar -corpus examples/corpus.txt -embedding moon -dimensions 4
 ```
 
-Quasar prints the token ID and its four-dimensional untrained vector.
+This inspection mode intentionally shows the deterministic initialization before training.
 
 ## Development principles
 
@@ -53,3 +72,4 @@ See [AGENTS.md](AGENTS.md) for the complete development rules.
 - [General documentation](docs/README.md)
 - [v0.1.0 technical notes](docs/releases/v0.1/README.md)
 - [v0.2.0 technical notes](docs/releases/v0.2/README.md)
+- [v0.3.0 technical notes](docs/releases/v0.3/README.md)
