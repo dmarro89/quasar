@@ -7,9 +7,12 @@ import (
 	"io"
 	"os"
 
+	"github.com/dmarro89/quasar/embedding"
 	"github.com/dmarro89/quasar/model"
 	"github.com/dmarro89/quasar/tokenizer"
 )
+
+const embeddingSeed uint64 = 1
 
 func main() {
 	if err := run(os.Args[1:], os.Stdout, os.Stderr); err != nil {
@@ -25,14 +28,19 @@ func run(args []string, stdout, stderr io.Writer) error {
 	corpusPath := flags.String("corpus", "", "path to the training corpus")
 	prompt := flags.String("prompt", "", "prompt whose last token seeds generation")
 	maxTokens := flags.Int("tokens", 8, "maximum number of new tokens to generate")
+	embeddingWord := flags.String("embedding", "", "show the untrained embedding for one token")
+	dimensions := flags.Int("dimensions", 4, "number of values in an inspected embedding")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
 	if *corpusPath == "" {
 		return errors.New("-corpus is required")
 	}
-	if *prompt == "" {
-		return errors.New("-prompt is required")
+	if *prompt != "" && *embeddingWord != "" {
+		return errors.New("use either -prompt or -embedding, not both")
+	}
+	if *prompt == "" && *embeddingWord == "" {
+		return errors.New("one of -prompt or -embedding is required")
 	}
 	if *maxTokens < 0 {
 		return errors.New("-tokens must be non-negative")
@@ -45,10 +53,17 @@ func run(args []string, stdout, stderr io.Writer) error {
 
 	tok := tokenizer.New()
 	corpusIDs := tok.Fit(string(corpus))
-	if len(corpusIDs) < 2 {
-		return errors.New("corpus must contain at least two tokens")
+	if len(corpusIDs) == 0 {
+		return errors.New("corpus must contain at least one token")
 	}
 
+	if *embeddingWord != "" {
+		return inspectEmbedding(tok, *embeddingWord, *dimensions, stdout)
+	}
+
+	if len(corpusIDs) < 2 {
+		return errors.New("generation corpus must contain at least two tokens")
+	}
 	promptIDs, err := tok.Encode(*prompt)
 	if err != nil {
 		return fmt.Errorf("encode prompt: %w", err)
@@ -71,5 +86,30 @@ func run(args []string, stdout, stderr io.Writer) error {
 		return fmt.Errorf("decode output: %w", err)
 	}
 	fmt.Fprintln(stdout, text)
+	return nil
+}
+
+func inspectEmbedding(tok *tokenizer.Tokenizer, word string, dimensions int, stdout io.Writer) error {
+	if dimensions <= 0 {
+		return errors.New("-dimensions must be positive")
+	}
+	ids, err := tok.Encode(word)
+	if err != nil {
+		return fmt.Errorf("encode embedding token: %w", err)
+	}
+	if len(ids) != 1 {
+		return errors.New("-embedding must contain exactly one token")
+	}
+
+	table, err := embedding.NewTable(tok.Size(), dimensions, embeddingSeed)
+	if err != nil {
+		return fmt.Errorf("create embedding table: %w", err)
+	}
+	vector, err := table.Lookup(ids[0])
+	if err != nil {
+		return fmt.Errorf("lookup embedding: %w", err)
+	}
+
+	fmt.Fprintf(stdout, "token=%s id=%d embedding=%v (untrained)\n", word, ids[0], vector)
 	return nil
 }
