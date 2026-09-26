@@ -29,7 +29,10 @@ func run(args []string, stdout, stderr io.Writer) error {
 	prompt := flags.String("prompt", "", "prompt whose last token seeds generation")
 	maxTokens := flags.Int("tokens", 8, "maximum number of new tokens to generate")
 	embeddingWord := flags.String("embedding", "", "show the untrained embedding for one token")
-	dimensions := flags.Int("dimensions", 4, "number of values in an inspected embedding")
+	dimensions := flags.Int("dimensions", 4, "embedding dimensions")
+	neural := flags.Bool("neural", false, "train and use the neural bigram model")
+	epochs := flags.Int("epochs", 100, "number of neural training epochs")
+	learningRate := flags.Float64("learning-rate", 0.05, "neural SGD learning rate")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -44,6 +47,9 @@ func run(args []string, stdout, stderr io.Writer) error {
 	}
 	if *maxTokens < 0 {
 		return errors.New("-tokens must be non-negative")
+	}
+	if *neural && *embeddingWord != "" {
+		return errors.New("-neural requires -prompt")
 	}
 
 	corpus, err := os.ReadFile(*corpusPath)
@@ -72,11 +78,19 @@ func run(args []string, stdout, stderr io.Writer) error {
 		return errors.New("prompt must contain at least one token")
 	}
 
-	m := model.NewBigram(tok.Size())
-	if err := m.Train(corpusIDs); err != nil {
-		return fmt.Errorf("train model: %w", err)
+	var generated []tokenizer.TokenID
+	if *neural {
+		generated, err = runNeural(corpusIDs, promptIDs[len(promptIDs)-1], tok.Size(), *dimensions, *epochs, float32(*learningRate), *maxTokens, stderr)
+		if err != nil {
+			return err
+		}
+	} else {
+		m := model.NewBigram(tok.Size())
+		if err := m.Train(corpusIDs); err != nil {
+			return fmt.Errorf("train model: %w", err)
+		}
+		generated = m.Generate(promptIDs[len(promptIDs)-1], *maxTokens)
 	}
-	generated := m.Generate(promptIDs[len(promptIDs)-1], *maxTokens)
 
 	outputIDs := make([]tokenizer.TokenID, 0, len(promptIDs)+len(generated))
 	outputIDs = append(outputIDs, promptIDs...)
@@ -87,6 +101,24 @@ func run(args []string, stdout, stderr io.Writer) error {
 	}
 	fmt.Fprintln(stdout, text)
 	return nil
+}
+
+func runNeural(corpusIDs []tokenizer.TokenID, seed tokenizer.TokenID, vocabularySize, dimensions, epochs int, learningRate float32, maxTokens int, stderr io.Writer) ([]tokenizer.TokenID, error) {
+	m, err := model.NewNeuralBigram(vocabularySize, dimensions, embeddingSeed)
+	if err != nil {
+		return nil, fmt.Errorf("create neural model: %w", err)
+	}
+	losses, err := m.Train(corpusIDs, epochs, learningRate)
+	if err != nil {
+		return nil, fmt.Errorf("train neural model: %w", err)
+	}
+	fmt.Fprintf(stderr, "loss %.6f -> %.6f\n", losses[0], losses[len(losses)-1])
+
+	generated, err := m.Generate(seed, maxTokens)
+	if err != nil {
+		return nil, fmt.Errorf("generate with neural model: %w", err)
+	}
+	return generated, nil
 }
 
 func inspectEmbedding(tok *tokenizer.Tokenizer, word string, dimensions int, stdout io.Writer) error {

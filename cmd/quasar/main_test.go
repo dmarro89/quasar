@@ -25,6 +25,33 @@ func TestRunGeneratesDeterministicText(t *testing.T) {
 	}
 }
 
+func TestRunTrainsAndUsesNeuralBigram(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "corpus.txt")
+	if err := os.WriteFile(path, []byte("a b a b a b a b"), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	err := run([]string{
+		"-corpus", path,
+		"-prompt", "a",
+		"-tokens", "3",
+		"-neural",
+		"-dimensions", "4",
+		"-epochs", "80",
+		"-learning-rate", "0.1",
+	}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("run() error = %v; stderr = %q", err, stderr.String())
+	}
+	if got, want := strings.TrimSpace(stdout.String()), "a b a b"; got != want {
+		t.Fatalf("output = %q, want %q", got, want)
+	}
+	if !strings.HasPrefix(strings.TrimSpace(stderr.String()), "loss ") || !strings.Contains(stderr.String(), " -> ") {
+		t.Fatalf("stderr = %q, want loss telemetry", stderr.String())
+	}
+}
+
 func TestRunInspectsEmbedding(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "corpus.txt")
 	if err := os.WriteFile(path, []byte("moon"), 0o600); err != nil {
