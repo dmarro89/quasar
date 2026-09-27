@@ -29,9 +29,9 @@ func TestProjectedCreatesDistinctQKV(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Project() error = %v", err)
 	}
-	assertVector(t, "query", query, tensor.Vector{1, 1}, 1e-6)
-	assertVector(t, "key", key, tensor.Vector{1, -1}, 1e-6)
-	assertVector(t, "value", value, tensor.Vector{2, 3}, 1e-6)
+	assertProjectedVector(t, "query", query, tensor.Vector{1, 1}, 1e-6)
+	assertProjectedVector(t, "key", key, tensor.Vector{1, -1}, 1e-6)
+	assertProjectedVector(t, "value", value, tensor.Vector{2, 3}, 1e-6)
 }
 
 func TestProjectedLastTokenUsesProjectedKeysAndValues(t *testing.T) {
@@ -63,7 +63,7 @@ func TestProjectedLastTokenUsesProjectedKeysAndValues(t *testing.T) {
 	}
 
 	scale := float32(1 / math.Sqrt(2))
-	assertVector(t, "scores", result.Scores, tensor.Vector{scale, -scale, 0}, 1e-5)
+	assertProjectedVector(t, "scores", result.Scores, tensor.Vector{scale, -scale, 0}, 1e-5)
 
 	var weightSum float32
 	for _, weight := range result.Weights {
@@ -77,7 +77,7 @@ func TestProjectedLastTokenUsesProjectedKeysAndValues(t *testing.T) {
 		result.Weights[0]*2 + result.Weights[2]*2,
 		result.Weights[1]*3 + result.Weights[2]*3,
 	}
-	assertVector(t, "output", result.Output, wantOutput, 1e-5)
+	assertProjectedVector(t, "output", result.Output, wantOutput, 1e-5)
 }
 
 func TestProjectedRejectsInvalidInput(t *testing.T) {
@@ -93,5 +93,17 @@ func TestProjectedRejectsInvalidInput(t *testing.T) {
 	}
 	if _, err := projected.LastToken([]tensor.Vector{{1}}); err == nil {
 		t.Fatal("LastToken() error = nil, want shape error")
+	}
+}
+
+func assertProjectedVector(t *testing.T, name string, got, want tensor.Vector, tolerance float64) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Fatalf("%s length = %d, want %d", name, len(got), len(want))
+	}
+	for i := range got {
+		if math.Abs(float64(got[i]-want[i])) > tolerance {
+			t.Fatalf("%s[%d] = %v, want %v", name, i, got[i], want[i])
+		}
 	}
 }
