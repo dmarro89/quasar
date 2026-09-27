@@ -6,33 +6,54 @@ The project grows one small release at a time. Each version introduces one impor
 
 Quasar is inspired by specialized local inference engines such as DwarfStar, but deliberately starts from much simpler models so every layer of the system can be understood before it is optimized.
 
-## Current release: v0.7.0
+## Current release: v0.8.0
 
-v0.7.0 gives self-attention distinct Query, Key, and Value representations.
+v0.8.0 adds **absolute positional information** to projected self-attention.
 
-v0.6 used the token embedding directly for all three roles:
-
-```text
-Q = K = V = embedding
-```
-
-v0.7 introduces three independent linear projection matrices:
+Each token still starts with its token embedding, but Quasar now adds a second vector that represents where the token appears in the sequence:
 
 ```text
-embedding -> Wq -> Query
-embedding -> Wk -> Key
-embedding -> Wv -> Value
+x_i = token_embedding_i + position_embedding_i
 ```
 
-The attention algorithm itself remains familiar:
+The resulting fixed-width vector is then sent through the v0.7 Q/K/V projections:
 
 ```text
-Q/K projections -> scaled dot-product scores -> softmax weights -> weighted V sum
+                         +-> Wq -> Query
+token embedding          |
+       +                 +-> Wk -> Key
+position embedding       |
+       |                 +-> Wv -> Value
+       v
+ positioned token
 ```
 
-The matrices are deterministic but still untrained. This release isolates linear projection and the separate Q/K/V roles before adding training through attention or positional information.
+This means the same token at position 0 and position 1 no longer has the same representation. As a result, `the moon shines` and `moon the shines` can produce different attention outputs even though they contain the same words.
 
-## Inspect projected Q/K/V attention
+The positional embeddings in v0.8 are deterministic but untrained. They are deliberately simple absolute embeddings so the reason positional information exists is clear before Quasar introduces a more modern mechanism such as RoPE.
+
+## Inspect positioned projected attention
+
+```bash
+go run ./cmd/quasar \
+  -corpus examples/corpus.txt \
+  -attention "the moon shines" \
+  -positioned-attention \
+  -dimensions 3
+```
+
+The command prints, for every token:
+
+- its sequence position
+- the original token embedding
+- the positional embedding
+- the combined token+position representation
+- the attention score and softmax weight
+- the final attention output
+
+The projected Query for the final token is also shown.
+
+## Inspect projected Q/K/V attention from v0.7
 
 ```bash
 go run ./cmd/quasar \
@@ -41,15 +62,6 @@ go run ./cmd/quasar \
   -projected-attention \
   -dimensions 3
 ```
-
-The command prints:
-
-- the projected Query for `shines`
-- a projected Key and Value for `the`, `moon`, and `shines`
-- the attention score and softmax weight for each token
-- the final weighted Value output
-
-The v0.6 identity-QKV mode is still available by omitting `-projected-attention`.
 
 ## Inspect identity-QKV self-attention from v0.6
 
@@ -144,3 +156,4 @@ See [AGENTS.md](AGENTS.md) for the complete development rules.
 - [v0.5.0 technical notes](docs/releases/v0.5/README.md)
 - [v0.6.0 technical notes](docs/releases/v0.6/README.md)
 - [v0.7.0 technical notes](docs/releases/v0.7/README.md)
+- [v0.8.0 technical notes](docs/releases/v0.8/README.md)
