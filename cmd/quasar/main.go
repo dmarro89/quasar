@@ -32,6 +32,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 	dimensions := flags.Int("dimensions", 4, "embedding dimensions")
 	neural := flags.Bool("neural", false, "train and use a neural next-token model")
 	contextSize := flags.Int("context-size", 1, "number of previous tokens used by the neural model")
+	orderedContext := flags.Bool("ordered-context", false, "preserve token order by concatenating context embeddings")
 	epochs := flags.Int("epochs", 100, "number of neural training epochs")
 	learningRate := flags.Float64("learning-rate", 0.05, "neural SGD learning rate")
 	if err := flags.Parse(args); err != nil {
@@ -57,6 +58,12 @@ func run(args []string, stdout, stderr io.Writer) error {
 	}
 	if !*neural && *contextSize != 1 {
 		return errors.New("-context-size requires -neural")
+	}
+	if *orderedContext && !*neural {
+		return errors.New("-ordered-context requires -neural")
+	}
+	if *orderedContext && *contextSize == 1 {
+		return errors.New("-ordered-context requires -context-size greater than 1")
 	}
 
 	corpus, err := os.ReadFile(*corpusPath)
@@ -94,7 +101,11 @@ func run(args []string, stdout, stderr io.Writer) error {
 			generated, err = runNeuralBigram(corpusIDs, promptIDs[len(promptIDs)-1], tok.Size(), *dimensions, *epochs, float32(*learningRate), *maxTokens, stderr)
 		} else {
 			seed := promptIDs[len(promptIDs)-*contextSize:]
-			generated, err = runNeuralContext(corpusIDs, seed, tok.Size(), *dimensions, *contextSize, *epochs, float32(*learningRate), *maxTokens, stderr)
+			if *orderedContext {
+				generated, err = runNeuralOrderedContext(corpusIDs, seed, tok.Size(), *dimensions, *contextSize, *epochs, float32(*learningRate), *maxTokens, stderr)
+			} else {
+				generated, err = runNeuralContext(corpusIDs, seed, tok.Size(), *dimensions, *contextSize, *epochs, float32(*learningRate), *maxTokens, stderr)
+			}
 		}
 		if err != nil {
 			return err
@@ -150,6 +161,24 @@ func runNeuralContext(corpusIDs, seed []tokenizer.TokenID, vocabularySize, dimen
 	generated, err := m.Generate(seed, maxTokens)
 	if err != nil {
 		return nil, fmt.Errorf("generate with neural context model: %w", err)
+	}
+	return generated, nil
+}
+
+func runNeuralOrderedContext(corpusIDs, seed []tokenizer.TokenID, vocabularySize, dimensions, contextSize, epochs int, learningRate float32, maxTokens int, stderr io.Writer) ([]tokenizer.TokenID, error) {
+	m, err := model.NewNeuralOrderedContext(vocabularySize, dimensions, contextSize, embeddingSeed)
+	if err != nil {
+		return nil, fmt.Errorf("create ordered neural context model: %w", err)
+	}
+	losses, err := m.Train(corpusIDs, epochs, learningRate)
+	if err != nil {
+		return nil, fmt.Errorf("train ordered neural context model: %w", err)
+	}
+	printLoss(stderr, losses)
+
+	generated, err := m.Generate(seed, maxTokens)
+	if err != nil {
+		return nil, fmt.Errorf("generate with ordered neural context model: %w", err)
 	}
 	return generated, nil
 }
