@@ -6,19 +6,19 @@ The project grows one small release at a time. Each version introduces one impor
 
 Quasar is inspired by specialized local inference engines such as DwarfStar, but deliberately starts from much simpler models so every layer of the system can be understood before it is optimized.
 
-## Current release: v0.3.0
+## Current release: v0.4.0
 
-v0.3.0 introduces Quasar's first trainable neural model.
+v0.4.0 lets Quasar predict from more than one previous token.
 
-The model still predicts the next token from only one previous token, but it no longer relies only on transition counts. It now learns numeric weights:
+A configurable fixed context window is converted into one context vector by averaging its token embeddings:
 
-`TokenID -> embedding -> dot products -> logits -> next token`
+`tokens -> embeddings -> mean context vector -> dot products -> logits -> next token`
 
-During training Quasar applies:
+Training still uses the v0.3 learning loop:
 
 `logits -> softmax -> cross-entropy loss -> gradients -> SGD weight updates`
 
-This means the embedding values introduced in v0.2 can now actually change as the model learns from the corpus.
+The key limitation is intentional: averaging loses order, so `[A,B]` and `[B,A]` produce the same context representation. Quasar now has a concrete reason to introduce positional information in a future release.
 
 ## Generate with the original bigram model
 
@@ -32,7 +32,7 @@ With the included corpus:
 the moon shines at night
 ```
 
-## Train and use the neural bigram
+## Train a one-token neural model
 
 ```bash
 go run ./cmd/quasar \
@@ -45,7 +45,23 @@ go run ./cmd/quasar \
   -learning-rate 0.05
 ```
 
-The first and final epoch loss are printed to stderr so training progress is visible. Generated text is written to stdout.
+`-context-size` defaults to `1`, preserving the v0.3 neural bigram behavior.
+
+## Train with two tokens of context
+
+```bash
+go run ./cmd/quasar \
+  -corpus examples/corpus.txt \
+  -prompt "the moon" \
+  -tokens 4 \
+  -neural \
+  -context-size 2 \
+  -dimensions 8 \
+  -epochs 120 \
+  -learning-rate 0.1
+```
+
+The prompt must contain at least as many tokens as the context window. The first and final epoch loss are printed to stderr; generated text is written to stdout.
 
 ## Inspect an untrained embedding
 
@@ -73,3 +89,4 @@ See [AGENTS.md](AGENTS.md) for the complete development rules.
 - [v0.1.0 technical notes](docs/releases/v0.1/README.md)
 - [v0.2.0 technical notes](docs/releases/v0.2/README.md)
 - [v0.3.0 technical notes](docs/releases/v0.3/README.md)
+- [v0.4.0 technical notes](docs/releases/v0.4/README.md)
