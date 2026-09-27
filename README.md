@@ -6,22 +6,43 @@ The project grows one small release at a time. Each version introduces one impor
 
 Quasar is inspired by specialized local inference engines such as DwarfStar, but deliberately starts from much simpler models so every layer of the system can be understood before it is optimized.
 
-## Current release: v0.5.0
+## Current release: v0.6.0
 
-v0.5.0 teaches Quasar to preserve the order of a fixed multi-token context.
+v0.6.0 introduces Quasar's first self-attention primitive.
 
-v0.4 combined context embeddings with a mean, which made `the moon` and `moon the` indistinguishable. v0.5 adds an ordered representation by concatenating one embedding slot per context position:
+The final token in a context acts as the query. It compares itself with every token key using scaled dot products, softmax converts those scores into attention weights, and the output is a weighted sum of the value vectors:
 
 ```text
-the moon -> [embedding(the) | embedding(moon)]
-moon the -> [embedding(moon) | embedding(the)]
+the moon shines
+         |
+         +-> query
+
+the ---- score ----\
+moon --- score -----+-> softmax weights -> weighted value sum -> fixed-width output
+shines - score ----/
 ```
 
-The prediction and training path is still familiar:
+To isolate the attention algorithm, v0.6 deliberately uses **identity Q/K/V**: token embeddings are used directly as queries, keys, and values. Learned Q/K/V projections, positional mechanisms, multi-head attention, and Transformer blocks come later.
 
-`ordered context -> dot products -> logits -> softmax -> cross-entropy -> gradients -> SGD`
+The attention output remains the same width as one embedding regardless of context length. This addresses the width explosion of the v0.5 concatenation approach, while introducing dynamic content-dependent weighting.
 
-This intentionally simple solution preserves order without introducing attention yet. Its main limitation is also instructive: context width grows as `embedding dimensions × context size`, so concatenation does not scale like a real Transformer.
+## Inspect self-attention
+
+```bash
+go run ./cmd/quasar \
+  -corpus examples/corpus.txt \
+  -attention "the moon shines" \
+  -dimensions 3
+```
+
+The command prints:
+
+- `shines` as the query token
+- one scaled query-key score per token
+- one softmax attention weight per token
+- the final weighted output vector
+
+The embeddings are still untrained in this inspection mode, so the calculation is real but the resulting attention weights do not yet represent learned semantics.
 
 ## Generate with the original bigram model
 
@@ -62,7 +83,7 @@ go run ./cmd/quasar \
   -learning-rate 0.1
 ```
 
-## Train with ordered context
+## Train with ordered context from v0.5
 
 ```bash
 go run ./cmd/quasar \
@@ -107,3 +128,4 @@ See [AGENTS.md](AGENTS.md) for the complete development rules.
 - [v0.3.0 technical notes](docs/releases/v0.3/README.md)
 - [v0.4.0 technical notes](docs/releases/v0.4/README.md)
 - [v0.5.0 technical notes](docs/releases/v0.5/README.md)
+- [v0.6.0 technical notes](docs/releases/v0.6/README.md)
