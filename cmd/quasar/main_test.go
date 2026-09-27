@@ -145,6 +145,53 @@ func TestRunInspectsEnglishSelfAttention(t *testing.T) {
 	}
 }
 
+func TestRunInspectsProjectedQKVAttention(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "corpus.txt")
+	corpus := "the moon shines at night\nthe sun shines during the day\n"
+	if err := os.WriteFile(path, []byte(corpus), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	err := run([]string{
+		"-corpus", path,
+		"-attention", "the moon shines",
+		"-projected-attention",
+		"-dimensions", "3",
+	}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("run() error = %v; stderr = %q", err, stderr.String())
+	}
+
+	output := stdout.String()
+	for _, want := range []string{
+		"query=shines q=[",
+		"token=the k=[",
+		"token=moon k=[",
+		"token=shines k=[",
+		" v=[",
+		" score=",
+		" weight=",
+		"output=[",
+		"note=untrained projected-qkv attention",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("projected attention output %q does not contain %q", output, want)
+		}
+	}
+	if got := strings.Count(output, "weight="); got != 3 {
+		t.Fatalf("projected attention output has %d weights, want 3: %q", got, output)
+	}
+}
+
+func TestRunRejectsProjectedAttentionWithoutAttentionText(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	err := run([]string{"-corpus", "unused", "-prompt", "the", "-projected-attention"}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("run() error = nil, want projected-attention mode error")
+	}
+}
+
 func TestRunRejectsPromptShorterThanContext(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "corpus.txt")
 	if err := os.WriteFile(path, []byte("a b c a b c"), 0o600); err != nil {

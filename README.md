@@ -6,27 +6,52 @@ The project grows one small release at a time. Each version introduces one impor
 
 Quasar is inspired by specialized local inference engines such as DwarfStar, but deliberately starts from much simpler models so every layer of the system can be understood before it is optimized.
 
-## Current release: v0.6.0
+## Current release: v0.7.0
 
-v0.6.0 introduces Quasar's first self-attention primitive.
+v0.7.0 gives self-attention distinct Query, Key, and Value representations.
 
-The final token in a context acts as the query. It compares itself with every token key using scaled dot products, softmax converts those scores into attention weights, and the output is a weighted sum of the value vectors:
+v0.6 used the token embedding directly for all three roles:
 
 ```text
-the moon shines
-         |
-         +-> query
-
-the ---- score ----\
-moon --- score -----+-> softmax weights -> weighted value sum -> fixed-width output
-shines - score ----/
+Q = K = V = embedding
 ```
 
-To isolate the attention algorithm, v0.6 deliberately uses **identity Q/K/V**: token embeddings are used directly as queries, keys, and values. Learned Q/K/V projections, positional mechanisms, multi-head attention, and Transformer blocks come later.
+v0.7 introduces three independent linear projection matrices:
 
-The attention output remains the same width as one embedding regardless of context length. This addresses the width explosion of the v0.5 concatenation approach, while introducing dynamic content-dependent weighting.
+```text
+embedding -> Wq -> Query
+embedding -> Wk -> Key
+embedding -> Wv -> Value
+```
 
-## Inspect self-attention
+The attention algorithm itself remains familiar:
+
+```text
+Q/K projections -> scaled dot-product scores -> softmax weights -> weighted V sum
+```
+
+The matrices are deterministic but still untrained. This release isolates linear projection and the separate Q/K/V roles before adding training through attention or positional information.
+
+## Inspect projected Q/K/V attention
+
+```bash
+go run ./cmd/quasar \
+  -corpus examples/corpus.txt \
+  -attention "the moon shines" \
+  -projected-attention \
+  -dimensions 3
+```
+
+The command prints:
+
+- the projected Query for `shines`
+- a projected Key and Value for `the`, `moon`, and `shines`
+- the attention score and softmax weight for each token
+- the final weighted Value output
+
+The v0.6 identity-QKV mode is still available by omitting `-projected-attention`.
+
+## Inspect identity-QKV self-attention from v0.6
 
 ```bash
 go run ./cmd/quasar \
@@ -34,15 +59,6 @@ go run ./cmd/quasar \
   -attention "the moon shines" \
   -dimensions 3
 ```
-
-The command prints:
-
-- `shines` as the query token
-- one scaled query-key score per token
-- one softmax attention weight per token
-- the final weighted output vector
-
-The embeddings are still untrained in this inspection mode, so the calculation is real but the resulting attention weights do not yet represent learned semantics.
 
 ## Generate with the original bigram model
 
@@ -106,8 +122,6 @@ The prompt must contain at least as many tokens as the context window. The first
 go run ./cmd/quasar -corpus examples/corpus.txt -embedding moon -dimensions 4
 ```
 
-This inspection mode intentionally shows the deterministic initialization before training.
-
 ## Development principles
 
 - latest stable Go
@@ -129,3 +143,4 @@ See [AGENTS.md](AGENTS.md) for the complete development rules.
 - [v0.4.0 technical notes](docs/releases/v0.4/README.md)
 - [v0.5.0 technical notes](docs/releases/v0.5/README.md)
 - [v0.6.0 technical notes](docs/releases/v0.6/README.md)
+- [v0.7.0 technical notes](docs/releases/v0.7/README.md)
