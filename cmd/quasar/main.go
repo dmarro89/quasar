@@ -33,6 +33,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 	embeddingWord := flags.String("embedding", "", "show the untrained embedding for one token")
 	attentionText := flags.String("attention", "", "inspect last-token self-attention for a token sequence")
 	projectedAttention := flags.Bool("projected-attention", false, "use distinct linear Q/K/V projections in attention inspection")
+	positionedAttention := flags.Bool("positioned-attention", false, "add absolute positional embeddings before projected Q/K/V attention")
 	dimensions := flags.Int("dimensions", 4, "embedding dimensions")
 	neural := flags.Bool("neural", false, "train and use a neural next-token model")
 	contextSize := flags.Int("context-size", 1, "number of previous tokens used by the neural model")
@@ -61,6 +62,12 @@ func run(args []string, stdout, stderr io.Writer) error {
 	}
 	if *projectedAttention && *attentionText == "" {
 		return errors.New("-projected-attention requires -attention")
+	}
+	if *positionedAttention && *attentionText == "" {
+		return errors.New("-positioned-attention requires -attention")
+	}
+	if *projectedAttention && *positionedAttention {
+		return errors.New("use at most one of -projected-attention or -positioned-attention")
 	}
 	if *maxTokens < 0 {
 		return errors.New("-tokens must be non-negative")
@@ -96,6 +103,9 @@ func run(args []string, stdout, stderr io.Writer) error {
 		return inspectEmbedding(tok, *embeddingWord, *dimensions, stdout)
 	}
 	if *attentionText != "" {
+		if *positionedAttention {
+			return inspectPositionedAttention(tok, *attentionText, *dimensions, stdout)
+		}
 		if *projectedAttention {
 			return inspectProjectedAttention(tok, *attentionText, *dimensions, stdout)
 		}
@@ -318,5 +328,40 @@ func inspectProjectedAttention(tok *tokenizer.Tokenizer, text string, dimensions
 	}
 	fmt.Fprintf(stdout, "output=%v\n", result.Output)
 	fmt.Fprintln(stdout, "note=untrained projected-qkv attention")
+	return nil
+}
+
+func inspectPositionedAttention(tok *tokenizer.Tokenizer, text string, dimensions int, stdout io.Writer) error {
+	ids, vectors, err := attentionVectors(tok, text, dimensions)
+	if err != nil {
+		return err
+	}
+
+	positioned, err := attention.NewPositionedProjected(dimensions, len(vectors), embeddingSeed+100)
+	if err != nil {
+		return fmt.Errorf("create positioned attention: %w", err)
+	}
+	result, err := positioned.LastToken(vectors)
+	if err != nil {
+		return fmt.Errorf("compute positioned attention: %w", err)
+	}
+	queryToken, err := tok.Decode([]tokenizer.TokenID{ids[len(ids)-1]})
+	if err != nil {
+		return fmt.Errorf("decode attention query: %w", err)
+	}
+	fmt.Fprintf(stdout, "query=%s q=%v\n", queryToken, result.Query)
+	for i, id := range ids {
+		token, err := tok.Decode([]tokenizer.TokenID{id})
+		if err != nil {
+			return fmt.Errorf("decode attention token: %w", err)
+		}
+		positional, combined, err := positioned.Position(vectors[i], i)
+		if err != nil {
+			return fmt.Errorf("position attention token: %w", err)
+		}
+		fmt.Fprintf(stdout, "position=%d token=%s embedding=%v positional=%v combined=%v score=%.6f weight=%.6f\n", i, token, vectors[i], positional, combined, result.Scores[i], result.Weights[i])
+	}
+	fmt.Fprintf(stdout, "output=%v\n", result.Output)
+	fmt.Fprintln(stdout, "note=untrained absolute-positional projected-qkv attention")
 	return nil
 }
