@@ -26,11 +26,12 @@ func run(args []string, stdout, stderr io.Writer) error {
 	flags.SetOutput(stderr)
 
 	corpusPath := flags.String("corpus", "", "path to the training corpus")
-	prompt := flags.String("prompt", "", "prompt whose last token seeds generation")
+	prompt := flags.String("prompt", "", "prompt used to seed generation")
 	maxTokens := flags.Int("tokens", 8, "maximum number of new tokens to generate")
 	embeddingWord := flags.String("embedding", "", "show the untrained embedding for one token")
 	dimensions := flags.Int("dimensions", 4, "embedding dimensions")
-	neural := flags.Bool("neural", false, "train and use the neural bigram model")
+	neural := flags.Bool("neural", false, "train and use a neural next-token model")
+	contextSize := flags.Int("context-size", 1, "number of previous tokens used by the neural model")
 	epochs := flags.Int("epochs", 100, "number of neural training epochs")
 	learningRate := flags.Float64("learning-rate", 0.05, "neural SGD learning rate")
 	if err := flags.Parse(args); err != nil {
@@ -48,8 +49,14 @@ func run(args []string, stdout, stderr io.Writer) error {
 	if *maxTokens < 0 {
 		return errors.New("-tokens must be non-negative")
 	}
+	if *contextSize <= 0 {
+		return errors.New("-context-size must be positive")
+	}
 	if *neural && *embeddingWord != "" {
 		return errors.New("-neural requires -prompt")
+	}
+	if !*neural && *contextSize != 1 {
+		return errors.New("-context-size requires -neural")
 	}
 
 	corpus, err := os.ReadFile(*corpusPath)
@@ -80,7 +87,15 @@ func run(args []string, stdout, stderr io.Writer) error {
 
 	var generated []tokenizer.TokenID
 	if *neural {
-		generated, err = runNeural(corpusIDs, promptIDs[len(promptIDs)-1], tok.Size(), *dimensions, *epochs, float32(*learningRate), *maxTokens, stderr)
+		if len(promptIDs) < *contextSize {
+			return fmt.Errorf("prompt has %d tokens but context size is %d", len(promptIDs), *contextSize)
+		}
+		if *contextSize == 1 {
+			generated, err = runNeuralBigram(corpusIDs, promptIDs[len(promptIDs)-1], tok.Size(), *dimensions, *epochs, float32(*learningRate), *maxTokens, stderr)
+		} else {
+			seed := promptIDs[len(promptIDs)-*contextSize:]
+			generated, err = runNeuralContext(corpusIDs, seed, tok.Size(), *dimensions, *contextSize, *epochs, float32(*learningRate), *maxTokens, stderr)
+		}
 		if err != nil {
 			return err
 		}
@@ -103,22 +118,44 @@ func run(args []string, stdout, stderr io.Writer) error {
 	return nil
 }
 
-func runNeural(corpusIDs []tokenizer.TokenID, seed tokenizer.TokenID, vocabularySize, dimensions, epochs int, learningRate float32, maxTokens int, stderr io.Writer) ([]tokenizer.TokenID, error) {
+func runNeuralBigram(corpusIDs []tokenizer.TokenID, seed tokenizer.TokenID, vocabularySize, dimensions, epochs int, learningRate float32, maxTokens int, stderr io.Writer) ([]tokenizer.TokenID, error) {
 	m, err := model.NewNeuralBigram(vocabularySize, dimensions, embeddingSeed)
 	if err != nil {
-		return nil, fmt.Errorf("create neural model: %w", err)
+		return nil, fmt.Errorf("create neural bigram: %w", err)
 	}
 	losses, err := m.Train(corpusIDs, epochs, learningRate)
 	if err != nil {
-		return nil, fmt.Errorf("train neural model: %w", err)
+		return nil, fmt.Errorf("train neural bigram: %w", err)
 	}
-	fmt.Fprintf(stderr, "loss %.6f -> %.6f\n", losses[0], losses[len(losses)-1])
+	printLoss(stderr, losses)
 
 	generated, err := m.Generate(seed, maxTokens)
 	if err != nil {
-		return nil, fmt.Errorf("generate with neural model: %w", err)
+		return nil, fmt.Errorf("generate with neural bigram: %w", err)
 	}
 	return generated, nil
+}
+
+func runNeuralContext(corpusIDs, seed []tokenizer.TokenID, vocabularySize, dimensions, contextSize, epochs int, learningRate float32, maxTokens int, stderr io.Writer) ([]tokenizer.TokenID, error) {
+	m, err := model.NewNeuralContext(vocabularySize, dimensions, contextSize, embeddingSeed)
+	if err != nil {
+		return nil, fmt.Errorf("create neural context model: %w", err)
+	}
+	losses, err := m.Train(corpusIDs, epochs, learningRate)
+	if err != nil {
+		return nil, fmt.Errorf("train neural context model: %w", err)
+	}
+	printLoss(stderr, losses)
+
+	generated, err := m.Generate(seed, maxTokens)
+	if err != nil {
+		return nil, fmt.Errorf("generate with neural context model: %w", err)
+	}
+	return generated, nil
+}
+
+func printLoss(stderr io.Writer, losses []float64) {
+	fmt.Fprintf(stderr, "loss %.6f -> %.6f\n", losses[0], losses[len(losses)-1])
 }
 
 func inspectEmbedding(tok *tokenizer.Tokenizer, word string, dimensions int, stdout io.Writer) error {
