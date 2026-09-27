@@ -80,6 +80,36 @@ func TestRunTrainsAndUsesTwoTokenContext(t *testing.T) {
 	}
 }
 
+func TestRunTrainsAndUsesOrderedEnglishContext(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "corpus.txt")
+	corpus := "the moon shines the moon shines the moon shines the moon shines"
+	if err := os.WriteFile(path, []byte(corpus), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	err := run([]string{
+		"-corpus", path,
+		"-prompt", "the moon",
+		"-tokens", "3",
+		"-neural",
+		"-context-size", "2",
+		"-ordered-context",
+		"-dimensions", "6",
+		"-epochs", "100",
+		"-learning-rate", "0.1",
+	}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("run() error = %v; stderr = %q", err, stderr.String())
+	}
+	if got, want := strings.TrimSpace(stdout.String()), "the moon shines the moon"; got != want {
+		t.Fatalf("output = %q, want %q", got, want)
+	}
+	if !strings.HasPrefix(strings.TrimSpace(stderr.String()), "loss ") || !strings.Contains(stderr.String(), " -> ") {
+		t.Fatalf("stderr = %q, want loss telemetry", stderr.String())
+	}
+}
+
 func TestRunRejectsPromptShorterThanContext(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "corpus.txt")
 	if err := os.WriteFile(path, []byte("a b c a b c"), 0o600); err != nil {

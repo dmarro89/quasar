@@ -6,19 +6,22 @@ The project grows one small release at a time. Each version introduces one impor
 
 Quasar is inspired by specialized local inference engines such as DwarfStar, but deliberately starts from much simpler models so every layer of the system can be understood before it is optimized.
 
-## Current release: v0.4.0
+## Current release: v0.5.0
 
-v0.4.0 lets Quasar predict from more than one previous token.
+v0.5.0 teaches Quasar to preserve the order of a fixed multi-token context.
 
-A configurable fixed context window is converted into one context vector by averaging its token embeddings:
+v0.4 combined context embeddings with a mean, which made `the moon` and `moon the` indistinguishable. v0.5 adds an ordered representation by concatenating one embedding slot per context position:
 
-`tokens -> embeddings -> mean context vector -> dot products -> logits -> next token`
+```text
+the moon -> [embedding(the) | embedding(moon)]
+moon the -> [embedding(moon) | embedding(the)]
+```
 
-Training still uses the v0.3 learning loop:
+The prediction and training path is still familiar:
 
-`logits -> softmax -> cross-entropy loss -> gradients -> SGD weight updates`
+`ordered context -> dot products -> logits -> softmax -> cross-entropy -> gradients -> SGD`
 
-The key limitation is intentional: averaging loses order, so `[A,B]` and `[B,A]` produce the same context representation. Quasar now has a concrete reason to introduce positional information in a future release.
+This intentionally simple solution preserves order without introducing attention yet. Its main limitation is also instructive: context width grows as `embedding dimensions × context size`, so concatenation does not scale like a real Transformer.
 
 ## Generate with the original bigram model
 
@@ -45,9 +48,7 @@ go run ./cmd/quasar \
   -learning-rate 0.05
 ```
 
-`-context-size` defaults to `1`, preserving the v0.3 neural bigram behavior.
-
-## Train with two tokens of context
+## Train with mean-pooled context from v0.4
 
 ```bash
 go run ./cmd/quasar \
@@ -56,6 +57,21 @@ go run ./cmd/quasar \
   -tokens 4 \
   -neural \
   -context-size 2 \
+  -dimensions 8 \
+  -epochs 120 \
+  -learning-rate 0.1
+```
+
+## Train with ordered context
+
+```bash
+go run ./cmd/quasar \
+  -corpus examples/corpus.txt \
+  -prompt "the moon" \
+  -tokens 4 \
+  -neural \
+  -context-size 2 \
+  -ordered-context \
   -dimensions 8 \
   -epochs 120 \
   -learning-rate 0.1
@@ -90,3 +106,4 @@ See [AGENTS.md](AGENTS.md) for the complete development rules.
 - [v0.2.0 technical notes](docs/releases/v0.2/README.md)
 - [v0.3.0 technical notes](docs/releases/v0.3/README.md)
 - [v0.4.0 technical notes](docs/releases/v0.4/README.md)
+- [v0.5.0 technical notes](docs/releases/v0.5/README.md)
