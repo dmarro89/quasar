@@ -7,8 +7,10 @@ import (
 	"io"
 	"os"
 
+	"github.com/dmarro89/quasar/attention"
 	"github.com/dmarro89/quasar/embedding"
 	"github.com/dmarro89/quasar/model"
+	"github.com/dmarro89/quasar/tensor"
 	"github.com/dmarro89/quasar/tokenizer"
 )
 
@@ -29,6 +31,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 	prompt := flags.String("prompt", "", "prompt used to seed generation")
 	maxTokens := flags.Int("tokens", 8, "maximum number of new tokens to generate")
 	embeddingWord := flags.String("embedding", "", "show the untrained embedding for one token")
+	attentionText := flags.String("attention", "", "inspect last-token self-attention for a token sequence")
 	dimensions := flags.Int("dimensions", 4, "embedding dimensions")
 	neural := flags.Bool("neural", false, "train and use a neural next-token model")
 	contextSize := flags.Int("context-size", 1, "number of previous tokens used by the neural model")
@@ -41,11 +44,19 @@ func run(args []string, stdout, stderr io.Writer) error {
 	if *corpusPath == "" {
 		return errors.New("-corpus is required")
 	}
-	if *prompt != "" && *embeddingWord != "" {
-		return errors.New("use either -prompt or -embedding, not both")
+
+	modes := 0
+	if *prompt != "" {
+		modes++
 	}
-	if *prompt == "" && *embeddingWord == "" {
-		return errors.New("one of -prompt or -embedding is required")
+	if *embeddingWord != "" {
+		modes++
+	}
+	if *attentionText != "" {
+		modes++
+	}
+	if modes != 1 {
+		return errors.New("use exactly one of -prompt, -embedding, or -attention")
 	}
 	if *maxTokens < 0 {
 		return errors.New("-tokens must be non-negative")
@@ -53,7 +64,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 	if *contextSize <= 0 {
 		return errors.New("-context-size must be positive")
 	}
-	if *neural && *embeddingWord != "" {
+	if *neural && *prompt == "" {
 		return errors.New("-neural requires -prompt")
 	}
 	if !*neural && *contextSize != 1 {
@@ -79,6 +90,9 @@ func run(args []string, stdout, stderr io.Writer) error {
 
 	if *embeddingWord != "" {
 		return inspectEmbedding(tok, *embeddingWord, *dimensions, stdout)
+	}
+	if *attentionText != "" {
+		return inspectAttention(tok, *attentionText, *dimensions, stdout)
 	}
 
 	if len(corpusIDs) < 2 {
@@ -209,5 +223,50 @@ func inspectEmbedding(tok *tokenizer.Tokenizer, word string, dimensions int, std
 	}
 
 	fmt.Fprintf(stdout, "token=%s id=%d embedding=%v (untrained)\n", word, ids[0], vector)
+	return nil
+}
+
+func inspectAttention(tok *tokenizer.Tokenizer, text string, dimensions int, stdout io.Writer) error {
+	if dimensions <= 0 {
+		return errors.New("-dimensions must be positive")
+	}
+	ids, err := tok.Encode(text)
+	if err != nil {
+		return fmt.Errorf("encode attention text: %w", err)
+	}
+	if len(ids) < 2 {
+		return errors.New("-attention must contain at least two tokens")
+	}
+
+	table, err := embedding.NewTable(tok.Size(), dimensions, embeddingSeed)
+	if err != nil {
+		return fmt.Errorf("create embedding table: %w", err)
+	}
+	vectors := make([]tensor.Vector, len(ids))
+	for i, id := range ids {
+		vectors[i], err = table.Lookup(id)
+		if err != nil {
+			return fmt.Errorf("lookup attention embedding: %w", err)
+		}
+	}
+
+	result, err := attention.LastToken(vectors)
+	if err != nil {
+		return fmt.Errorf("compute attention: %w", err)
+	}
+	query, err := tok.Decode([]tokenizer.TokenID{ids[len(ids)-1]})
+	if err != nil {
+		return fmt.Errorf("decode attention query: %w", err)
+	}
+	fmt.Fprintf(stdout, "query=%s embedding=%v\n", query, vectors[len(vectors)-1])
+	for i, id := range ids {
+		token, err := tok.Decode([]tokenizer.TokenID{id})
+		if err != nil {
+			return fmt.Errorf("decode attention token: %w", err)
+		}
+		fmt.Fprintf(stdout, "token=%s score=%.6f weight=%.6f\n", token, result.Scores[i], result.Weights[i])
+	}
+	fmt.Fprintf(stdout, "output=%v\n", result.Output)
+	fmt.Fprintln(stdout, "note=untrained identity-qkv attention")
 	return nil
 }
