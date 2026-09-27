@@ -110,6 +110,41 @@ func TestRunTrainsAndUsesOrderedEnglishContext(t *testing.T) {
 	}
 }
 
+func TestRunInspectsEnglishSelfAttention(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "corpus.txt")
+	corpus := "the moon shines at night\nthe sun shines during the day\n"
+	if err := os.WriteFile(path, []byte(corpus), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	err := run([]string{
+		"-corpus", path,
+		"-attention", "the moon shines",
+		"-dimensions", "3",
+	}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("run() error = %v; stderr = %q", err, stderr.String())
+	}
+
+	output := stdout.String()
+	for _, want := range []string{
+		"query=shines embedding=[",
+		"token=the score=",
+		"token=moon score=",
+		"token=shines score=",
+		"output=[",
+		"note=untrained identity-qkv attention",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("attention output %q does not contain %q", output, want)
+		}
+	}
+	if got := strings.Count(output, "weight="); got != 3 {
+		t.Fatalf("attention output has %d weights, want 3: %q", got, output)
+	}
+}
+
 func TestRunRejectsPromptShorterThanContext(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "corpus.txt")
 	if err := os.WriteFile(path, []byte("a b c a b c"), 0o600); err != nil {
