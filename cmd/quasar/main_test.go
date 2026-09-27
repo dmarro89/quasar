@@ -52,6 +52,52 @@ func TestRunTrainsAndUsesNeuralBigram(t *testing.T) {
 	}
 }
 
+func TestRunTrainsAndUsesTwoTokenContext(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "corpus.txt")
+	if err := os.WriteFile(path, []byte("a b c a b c a b c a b c"), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	err := run([]string{
+		"-corpus", path,
+		"-prompt", "a b",
+		"-tokens", "3",
+		"-neural",
+		"-context-size", "2",
+		"-dimensions", "8",
+		"-epochs", "120",
+		"-learning-rate", "0.1",
+	}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("run() error = %v; stderr = %q", err, stderr.String())
+	}
+	if got, want := strings.TrimSpace(stdout.String()), "a b c a b"; got != want {
+		t.Fatalf("output = %q, want %q", got, want)
+	}
+	if !strings.HasPrefix(strings.TrimSpace(stderr.String()), "loss ") || !strings.Contains(stderr.String(), " -> ") {
+		t.Fatalf("stderr = %q, want loss telemetry", stderr.String())
+	}
+}
+
+func TestRunRejectsPromptShorterThanContext(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "corpus.txt")
+	if err := os.WriteFile(path, []byte("a b c a b c"), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	err := run([]string{
+		"-corpus", path,
+		"-prompt", "a",
+		"-neural",
+		"-context-size", "2",
+	}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("run() error = nil, want short-prompt error")
+	}
+}
+
 func TestRunInspectsEmbedding(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "corpus.txt")
 	if err := os.WriteFile(path, []byte("moon"), 0o600); err != nil {
