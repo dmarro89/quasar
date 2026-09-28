@@ -6,52 +6,53 @@ The project grows one small release at a time. Each version introduces one impor
 
 Quasar is inspired by specialized local inference engines such as DwarfStar, but deliberately starts from much simpler models so every layer of the system can be understood before it is optimized.
 
-## Current release: v0.8.0
+## Current release: v0.9.0
 
-v0.8.0 adds **absolute positional information** to projected self-attention.
+v0.9.0 introduces **RoPE (Rotary Position Embedding)**.
 
-Each token still starts with its token embedding, but Quasar now adds a second vector that represents where the token appears in the sequence:
-
-```text
-x_i = token_embedding_i + position_embedding_i
-```
-
-The resulting fixed-width vector is then sent through the v0.7 Q/K/V projections:
+Instead of adding a learned-style absolute position vector to each token as v0.8 did, Quasar now encodes position by rotating projected Query and Key vectors:
 
 ```text
-                         +-> Wq -> Query
-token embedding          |
-       +                 +-> Wk -> Key
-position embedding       |
-       |                 +-> Wv -> Value
-       v
- positioned token
+embedding -> Wq -> Query -> RoPE(position)
+embedding -> Wk -> Key   -> RoPE(position)
+embedding -> Wv -> Value                 // not rotated
 ```
 
-This means the same token at position 0 and position 1 no longer has the same representation. As a result, `the moon shines` and `moon the shines` can produce different attention outputs even though they contain the same words.
+RoPE treats adjacent vector dimensions as 2D pairs and rotates every pair by a position-dependent angle. Different pairs rotate at different frequencies.
 
-The positional embeddings in v0.8 are deterministic but untrained. They are deliberately simple absolute embeddings so the reason positional information exists is clear before Quasar introduces a more modern mechanism such as RoPE.
+The important consequence is that the dot product between a rotated Query and Key carries **relative positional information**. Shifting both tokens by the same number of positions preserves that relationship.
 
-## Inspect positioned projected attention
+The v0.9 implementation uses the standard base-10000 frequency schedule, requires an even vector width, and computes rotations without a `maxPositions × dimensions` positional embedding table.
+
+The Q/K/V matrices and token embeddings are still untrained. This release isolates the geometry and runtime behavior of RoPE before Quasar adds more Transformer structure.
+
+## Inspect RoPE projected attention
+
+```bash
+go run ./cmd/quasar \
+  -corpus examples/corpus.txt \
+  -attention "the moon shines" \
+  -rope-attention \
+  -dimensions 4
+```
+
+The command prints:
+
+- the final token's rotated Query
+- each token's rotated Key
+- each token's unrotated projected Value
+- attention scores and softmax weights
+- the final weighted Value output
+
+## Inspect absolute-position attention from v0.8
 
 ```bash
 go run ./cmd/quasar \
   -corpus examples/corpus.txt \
   -attention "the moon shines" \
   -positioned-attention \
-  -dimensions 3
+  -dimensions 4
 ```
-
-The command prints, for every token:
-
-- its sequence position
-- the original token embedding
-- the positional embedding
-- the combined token+position representation
-- the attention score and softmax weight
-- the final attention output
-
-The projected Query for the final token is also shown.
 
 ## Inspect projected Q/K/V attention from v0.7
 
@@ -60,7 +61,7 @@ go run ./cmd/quasar \
   -corpus examples/corpus.txt \
   -attention "the moon shines" \
   -projected-attention \
-  -dimensions 3
+  -dimensions 4
 ```
 
 ## Inspect identity-QKV self-attention from v0.6
@@ -69,7 +70,7 @@ go run ./cmd/quasar \
 go run ./cmd/quasar \
   -corpus examples/corpus.txt \
   -attention "the moon shines" \
-  -dimensions 3
+  -dimensions 4
 ```
 
 ## Generate with the original bigram model
@@ -157,3 +158,4 @@ See [AGENTS.md](AGENTS.md) for the complete development rules.
 - [v0.6.0 technical notes](docs/releases/v0.6/README.md)
 - [v0.7.0 technical notes](docs/releases/v0.7/README.md)
 - [v0.8.0 technical notes](docs/releases/v0.8/README.md)
+- [v0.9.0 technical notes](docs/releases/v0.9/README.md)
