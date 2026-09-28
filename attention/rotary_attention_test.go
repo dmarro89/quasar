@@ -56,7 +56,7 @@ func TestRotaryProjectedAttentionDistinguishesEnglishWordOrder(t *testing.T) {
 		t.Fatalf("LastToken(swapped) error = %v", err)
 	}
 
-	if vectorsAlmostEqual(ordered.Output, swapped.Output, 1e-6) {
+	if rotaryVectorsAlmostEqual(ordered.Output, swapped.Output, 1e-6) {
 		t.Fatalf("RoPE attention produced the same output for different word order: %v", ordered.Output)
 	}
 }
@@ -67,7 +67,7 @@ func TestRotaryProjectedRejectsOddDimensions(t *testing.T) {
 	}
 }
 
-func vectorsAlmostEqual(a, b tensor.Vector, tolerance float64) bool {
+func rotaryVectorsAlmostEqual(a, b tensor.Vector, tolerance float64) bool {
 	if len(a) != len(b) {
 		return false
 	}
