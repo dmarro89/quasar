@@ -6,27 +6,66 @@ The project grows one small release at a time. Each version introduces one impor
 
 Quasar is inspired by specialized local inference engines such as DwarfStar, but deliberately starts from much simpler models so every layer of the system can be understood before it is optimized.
 
-## Current release: v0.9.0
+## Current release: v0.10.0
 
-v0.9.0 introduces **RoPE (Rotary Position Embedding)**.
+v0.10.0 introduces the **KV cache** and the first truly incremental attention decode path.
 
-Instead of adding a learned-style absolute position vector to each token as v0.8 did, Quasar now encodes position by rotating projected Query and Key vectors:
+The v0.9 implementation recomputed projected Keys and Values for every previous token whenever attention was evaluated. v0.10 stores those results once and reuses them:
 
 ```text
-embedding -> Wq -> Query -> RoPE(position)
-embedding -> Wk -> Key   -> RoPE(position)
-embedding -> Wv -> Value                 // not rotated
+new token
+   |
+   +-> Wq -> Query -> RoPE(position)
+   +-> Wk -> Key   -> RoPE(position) -> append to K cache
+   +-> Wv -> Value                  -> append to V cache
+
+rotated Query
+   |
+   +-> dot with all cached Keys
+   +-> softmax
+   +-> weighted sum of cached Values
 ```
 
-RoPE treats adjacent vector dimensions as 2D pairs and rotates every pair by a position-dependent angle. Different pairs rotate at different frequencies.
+Only the new token needs fresh Q/K/V projections. Earlier Keys and Values are read directly from preallocated contiguous cache buffers.
 
-The important consequence is that the dot product between a rotated Query and Key carries **relative positional information**. Shifting both tokens by the same number of positions preserves that relationship.
+The cache has a fixed token capacity and reserves:
 
-The v0.9 implementation uses the standard base-10000 frequency schedule, requires an even vector width, and computes rotations without a `maxPositions × dimensions` positional embedding table.
+```text
+2 * capacity * dimensions * sizeof(float32)
+```
 
-The Q/K/V matrices and token embeddings are still untrained. This release isolates the geometry and runtime behavior of RoPE before Quasar adds more Transformer structure.
+bytes in this single-head educational implementation.
 
-## Inspect RoPE projected attention
+For example, five tokens with four-dimensional K/V vectors reserve:
+
+```text
+2 * 5 * 4 * 4 = 160 bytes
+```
+
+The attention weights are still deterministic but untrained. v0.10 is about inference data flow and avoiding repeated work, not linguistic quality.
+
+## Inspect incremental RoPE attention with a KV cache
+
+```bash
+go run ./cmd/quasar \
+  -corpus examples/corpus.txt \
+  -attention "the moon shines at night" \
+  -cached-rope-attention \
+  -dimensions 4
+```
+
+The command prints each incremental step, including:
+
+- token position
+- current cache length/capacity
+- the new rotated Query
+- the newly cached rotated Key
+- the newly cached unrotated projected Value
+- attention scores and softmax weights over all cached tokens
+- the current attention output
+- total reserved K/V cache bytes
+
+## Inspect non-cached RoPE attention from v0.9
 
 ```bash
 go run ./cmd/quasar \
@@ -35,14 +74,6 @@ go run ./cmd/quasar \
   -rope-attention \
   -dimensions 4
 ```
-
-The command prints:
-
-- the final token's rotated Query
-- each token's rotated Key
-- each token's unrotated projected Value
-- attention scores and softmax weights
-- the final weighted Value output
 
 ## Inspect absolute-position attention from v0.8
 
@@ -159,3 +190,4 @@ See [AGENTS.md](AGENTS.md) for the complete development rules.
 - [v0.7.0 technical notes](docs/releases/v0.7/README.md)
 - [v0.8.0 technical notes](docs/releases/v0.8/README.md)
 - [v0.9.0 technical notes](docs/releases/v0.9/README.md)
+- [v0.10.0 technical notes](docs/releases/v0.10/README.md)
