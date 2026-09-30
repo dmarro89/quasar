@@ -22,9 +22,9 @@ func TestCachedRotaryMatchesUncachedPrefixAttention(t *testing.T) {
 	}
 
 	vectors := []tensor.Vector{
-		{1, 0},    // the
-		{0, 1},    // moon
-		{1, 1},    // shines
+		{1, 0},     // the
+		{0, 1},     // moon
+		{1, 1},     // shines
 		{0.5, 0.5}, // at
 	}
 	for i, vector := range vectors {
