@@ -35,6 +35,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 	projectedAttention := flags.Bool("projected-attention", false, "use distinct linear Q/K/V projections in attention inspection")
 	positionedAttention := flags.Bool("positioned-attention", false, "add absolute positional embeddings before projected Q/K/V attention")
 	ropeAttention := flags.Bool("rope-attention", false, "apply RoPE to projected Q/K attention")
+	cachedRopeAttention := flags.Bool("cached-rope-attention", false, "incrementally apply RoPE attention with a KV cache")
 	dimensions := flags.Int("dimensions", 4, "embedding dimensions")
 	neural := flags.Bool("neural", false, "train and use a neural next-token model")
 	contextSize := flags.Int("context-size", 1, "number of previous tokens used by the neural model")
@@ -70,6 +71,9 @@ func run(args []string, stdout, stderr io.Writer) error {
 	if *ropeAttention && *attentionText == "" {
 		return errors.New("-rope-attention requires -attention")
 	}
+	if *cachedRopeAttention && *attentionText == "" {
+		return errors.New("-cached-rope-attention requires -attention")
+	}
 	attentionVariants := 0
 	if *projectedAttention {
 		attentionVariants++
@@ -80,8 +84,11 @@ func run(args []string, stdout, stderr io.Writer) error {
 	if *ropeAttention {
 		attentionVariants++
 	}
+	if *cachedRopeAttention {
+		attentionVariants++
+	}
 	if attentionVariants > 1 {
-		return errors.New("use at most one of -projected-attention, -positioned-attention, or -rope-attention")
+		return errors.New("use at most one of -projected-attention, -positioned-attention, -rope-attention, or -cached-rope-attention")
 	}
 	if *maxTokens < 0 {
 		return errors.New("-tokens must be non-negative")
@@ -117,6 +124,9 @@ func run(args []string, stdout, stderr io.Writer) error {
 		return inspectEmbedding(tok, *embeddingWord, *dimensions, stdout)
 	}
 	if *attentionText != "" {
+		if *cachedRopeAttention {
+			return inspectCachedRotaryAttention(tok, *attentionText, *dimensions, stdout)
+		}
 		if *ropeAttention {
 			return inspectRotaryAttention(tok, *attentionText, *dimensions, stdout)
 		}
